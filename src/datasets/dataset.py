@@ -12,8 +12,20 @@ POSE_REPS = ["xyz", "rotvec", "rotmat", "rotquat", "rot6d"]
 
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, num_frames=1, sampling="conseq", sampling_step=1, split="train",
-                 pose_rep="rot6d", translation=True, glob=True, max_len=-1, min_len=-1, num_seq_max=-1, **kwargs):
+    def __init__(
+        self,
+        num_frames=1,
+        sampling="conseq",
+        sampling_step=1,
+        split="train",
+        pose_rep="rot6d",
+        translation=True,
+        glob=True,
+        max_len=-1,
+        min_len=-1,
+        num_seq_max=-1,
+        **kwargs,
+    ):
         self.num_frames = num_frames
         self.sampling = sampling
         self.sampling_step = sampling_step
@@ -49,6 +61,7 @@ class Dataset(torch.utils.data.Dataset):
 
     def label_to_action(self, label):
         import numbers
+
         if isinstance(label, numbers.Integral):
             return self._label_to_action[label]
         else:  # if it is one hot vector
@@ -82,7 +95,7 @@ class Dataset(torch.utils.data.Dataset):
         return self.action_to_action_name(action)
 
     def __getitem__(self, index):
-        if self.split == 'train':
+        if self.split == "train":
             data_index = self._train[index]
         else:
             data_index = self._test[index]
@@ -123,7 +136,9 @@ class Dataset(torch.utils.data.Dataset):
                 elif pose_rep == "rotquat":
                     ret = geometry.axis_angle_to_quaternion(pose)
                 elif pose_rep == "rot6d":
-                    ret = geometry.matrix_to_rotation_6d(geometry.axis_angle_to_matrix(pose))
+                    ret = geometry.matrix_to_rotation_6d(
+                        geometry.axis_angle_to_matrix(pose)
+                    )
         if pose_rep != "xyz" and self.translation:
             padded_tr = torch.zeros((ret.shape[0], ret.shape[2]), dtype=ret.dtype)
             padded_tr[:, :3] = ret_tr
@@ -139,7 +154,9 @@ class Dataset(torch.utils.data.Dataset):
         else:
             if self.num_frames == -2:
                 if self.min_len <= 0:
-                    raise ValueError("You should put a min_len > 0 for num_frames == -2 mode")
+                    raise ValueError(
+                        "You should put a min_len > 0 for num_frames == -2 mode"
+                    )
                 if self.max_len != -1:
                     max_frame = min(nframes, self.max_len)
                 else:
@@ -162,22 +179,22 @@ class Dataset(torch.utils.data.Dataset):
                 fair = False  # True
                 if fair:
                     # distills redundancy everywhere
-                    choices = np.random.choice(range(nframes),
-                                               num_frames,
-                                               replace=True)
+                    choices = np.random.choice(range(nframes), num_frames, replace=True)
                     frame_ix = sorted(choices)
                 else:
                     # adding the last frame until done
                     ntoadd = max(0, num_frames - nframes)
                     lastframe = nframes - 1
                     padding = lastframe * np.ones(ntoadd, dtype=int)
-                    frame_ix = np.concatenate((np.arange(0, nframes),
-                                               padding))
+                    frame_ix = np.concatenate((np.arange(0, nframes), padding))
 
             elif self.sampling in ["conseq", "random_conseq"]:
                 step_max = (nframes - 1) // (num_frames - 1)
                 if self.sampling == "conseq":
-                    if self.sampling_step == -1 or self.sampling_step * (num_frames - 1) >= nframes:
+                    if (
+                        self.sampling_step == -1
+                        or self.sampling_step * (num_frames - 1) >= nframes
+                    ):
                         step = step_max
                     else:
                         step = self.sampling_step
@@ -190,9 +207,7 @@ class Dataset(torch.utils.data.Dataset):
                 frame_ix = shift + np.arange(0, lastone + 1, step)
 
             elif self.sampling == "random":
-                choices = np.random.choice(range(nframes),
-                                           num_frames,
-                                           replace=False)
+                choices = np.random.choice(range(nframes), num_frames, replace=False)
                 frame_ix = sorted(choices)
 
             else:
@@ -202,7 +217,7 @@ class Dataset(torch.utils.data.Dataset):
         return inp, target
 
     def get_label_sample(self, label, n=1, return_labels=False, return_index=False):
-        if self.split == 'train':
+        if self.split == "train":
             index = self._train
         else:
             index = self._test
@@ -213,7 +228,7 @@ class Dataset(torch.utils.data.Dataset):
         if n == 1:
             data_index = index[np.random.choice(choices)]
             x, y = self._get_item_data_index(data_index)
-            assert (label == y)
+            assert label == y
             y = label
         else:
             data_index = np.random.choice(choices, n)
@@ -229,7 +244,10 @@ class Dataset(torch.utils.data.Dataset):
             return x
 
     def get_label_sample_batch(self, labels):
-        samples = [self.get_label_sample(label, n=1, return_labels=True, return_index=False) for label in labels]
+        samples = [
+            self.get_label_sample(label, n=1, return_labels=True, return_index=False)
+            for label in labels
+        ]
         batch = collate(samples)
         x = batch["x"]
         mask = batch["mask"]
@@ -240,7 +258,7 @@ class Dataset(torch.utils.data.Dataset):
         if self.num_frames != -1:
             return self.num_frames
 
-        if self.split == 'train':
+        if self.split == "train":
             index = self._train
         else:
             index = self._test
@@ -257,32 +275,37 @@ class Dataset(torch.utils.data.Dataset):
         return np.mean(lengths)
 
     def get_stats(self):
-        if self.split == 'train':
+        if self.split == "train":
             index = self._train
         else:
             index = self._test
 
         numframes = self._num_frames_in_video[index]
-        allmeans = np.array([self.get_mean_length_label(x) for x in range(self.num_classes)])
+        allmeans = np.array(
+            [self.get_mean_length_label(x) for x in range(self.num_classes)]
+        )
 
-        stats = {"name": self.dataname,
-                 "number of classes": self.num_classes,
-                 "number of sequences": len(self),
-                 "duration: min": int(numframes.min()),
-                 "duration: max": int(numframes.max()),
-                 "duration: mean": int(numframes.mean()),
-                 "duration mean/action: min": int(allmeans.min()),
-                 "duration mean/action: max": int(allmeans.max()),
-                 "duration mean/action: mean": int(allmeans.mean())}
+        stats = {
+            "name": self.dataname,
+            "number of classes": self.num_classes,
+            "number of sequences": len(self),
+            "duration: min": int(numframes.min()),
+            "duration: max": int(numframes.max()),
+            "duration: mean": int(numframes.mean()),
+            "duration mean/action: min": int(allmeans.min()),
+            "duration mean/action: max": int(allmeans.max()),
+            "duration mean/action: mean": int(allmeans.mean()),
+        }
         return stats
 
     def __len__(self):
         num_seq_max = getattr(self, "num_seq_max", -1)
         if num_seq_max == -1:
             from math import inf
+
             num_seq_max = inf
 
-        if self.split == 'train':
+        if self.split == "train":
             return min(len(self._train), num_seq_max)
         else:
             return min(len(self._test), num_seq_max)
@@ -297,13 +320,13 @@ class Dataset(torch.utils.data.Dataset):
         parameters["njoints"] = self.njoints
 
     def shuffle(self):
-        if self.split == 'train':
+        if self.split == "train":
             random.shuffle(self._train)
         else:
             random.shuffle(self._test)
 
     def reset_shuffle(self):
-        if self.split == 'train':
+        if self.split == "train":
             if self._original_train is None:
                 self._original_train = self._train
             else:

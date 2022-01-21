@@ -10,5 +10,5 @@ def calculate_accuracy(model, motion_loader, num_labels, classifier, device):
             for label, pred in zip(batch["y"], batch_pred):
                 confusion[label][pred] += 1
 
-    accuracy = torch.trace(confusion)/torch.sum(confusion)
+    accuracy = torch.trace(confusion) / torch.sum(confusion)
     return accuracy.item(), confusion

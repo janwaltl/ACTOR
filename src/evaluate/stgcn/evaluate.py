@@ -10,11 +10,13 @@ from src.recognition.models.stgcn import STGCN
 class Evaluation:
     def __init__(self, dataname, parameters, device, seed=None):
         layout = "smpl" if parameters["glob"] else "smpl_noglobal"
-        model = STGCN(in_channels=parameters["nfeats"],
-                      num_class=parameters["num_classes"],
-                      graph_args={"layout": layout, "strategy": "spatial"},
-                      edge_importance_weighting=True,
-                      device=parameters["device"])
+        model = STGCN(
+            in_channels=parameters["nfeats"],
+            num_class=parameters["num_classes"],
+            graph_args={"layout": layout, "strategy": "spatial"},
+            edge_importance_weighting=True,
+            device=parameters["device"],
+        )
 
         model = model.to(parameters["device"])
 
@@ -56,7 +58,7 @@ class Evaluation:
             print(f"Computing stgcn {metric} on the {key} loader ...")
 
         metrics_all = {}
-        for sets in ["train", "test"]:
+        for sets in ["test"]:
             computedfeats = {}
             metrics = {}
             for key, loaderSets in loaders.items():
@@ -65,22 +67,21 @@ class Evaluation:
                 metric = "accuracy"
                 print_logs(metric, key)
                 mkey = f"{metric}_{key}"
-                metrics[mkey], _ = calculate_accuracy(model, loader,
-                                                      self.num_classes,
-                                                      self.model, self.device)
+                metrics[mkey], _ = calculate_accuracy(
+                    model, loader, self.num_classes, self.model, self.device
+                )
                 # features for diversity
                 print_logs("features", key)
                 feats, labels = self.compute_features(model, loader)
                 print_logs("stats", key)
                 stats = self.calculate_activation_statistics(feats)
 
-                computedfeats[key] = {"feats": feats,
-                                      "labels": labels,
-                                      "stats": stats}
+                computedfeats[key] = {"feats": feats, "labels": labels, "stats": stats}
 
                 print_logs("diversity", key)
-                ret = calculate_diversity_multimodality(feats, labels, self.num_classes,
-                                                        seed=self.seed)
+                ret = calculate_diversity_multimodality(
+                    feats, labels, self.num_classes, seed=self.seed
+                )
                 metrics[f"diversity_{key}"], metrics[f"multimodality_{key}"] = ret
 
             # taking the stats of the ground truth and remove it from the computed feats
@@ -96,7 +97,7 @@ class Evaluation:
             metrics_all[sets] = metrics
 
         metrics = {}
-        for sets in ["train", "test"]:
+        for sets in ["test"]:
             for key in metrics_all[sets]:
                 metrics[f"{key}_{sets}"] = metrics_all[sets][key]
         return metrics
