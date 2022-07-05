@@ -10,7 +10,7 @@ def subseq_mask(n):
     return mask
 
 
-USE_DECODER_ATTN = True
+USE_DECODER_ATTN = False
 
 
 class PositionalEncoding(nn.Module):
@@ -247,7 +247,6 @@ class Decoder_TRANSFORMER(nn.Module):
 
     def forward(self, batch):
         z, y, mask, lengths = batch["z"], batch["y"], batch["mask"], batch["lengths"]
-        __import__("pdb").set_trace()
 
         latent_dim = z.shape[1]
         bs, nframes = mask.shape

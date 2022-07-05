@@ -15,4 +15,4 @@ EVALSEED = 0
 # torch.set_deterministic(True)
 torch.backends.cudnn.benchmark = False
 
-fixseed(SEED)
+# fixseed(SEED)

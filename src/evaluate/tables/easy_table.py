@@ -21,15 +21,15 @@ def get_reconsname(mname):
 def valformat(val, power=3):
     p = float(pow(10, power))
     # "{:<04}".format(np.round(p*val).astype(int)/p)
-    return str(np.round(p*val).astype(int)/p).ljust(4, "0")
+    return str(np.round(p * val).astype(int) / p).ljust(4, "0")
 
 
 def format_values(values, key, latex=True):
     mean = np.mean(values)
 
     if "accuracy" in key:
-        mean = 100*mean
-        values = 100*values
+        mean = 100 * mean
+        values = 100 * values
         smean = valformat(mean, 1)
     else:
         smean = valformat(mean, 2)
@@ -50,7 +50,12 @@ def print_results(folder, evaluation):
     a2m = metrics["feats"]
 
     if "fid_gen_test" in a2m:
-        keys = ["fid_{}_train", "fid_{}_test", "accuracy_{}_train", "diversity_{}_train", "multimodality_{}_train"]
+        keys = [
+            "fid_{}_test",
+            "accuracy_{}_test",
+            "diversity_{}_test",
+            "multimodality_{}_test",
+        ]
     else:
         keys = ["fid_{}", "accuracy_{}", "diversity_{}", "multimodality_{}"]
 
@@ -82,6 +87,7 @@ def print_results(folder, evaluation):
     table = "\n".join(rows)
     table_latex = "\n".join(rows_latex)
     print("Results")
+    print(["fid", "acc", "div", "mmod"])
     print(table)
     print()
     print("Latex table")

@@ -1,8 +1,9 @@
 import torch
 from .cae import CAE
+from ..tools.losses import get_loss_function
 
 
-class CVAE(CAE):
+class CVAETokLat(CAE):
     def reparameterize(self, batch, seed=None):
         mu, logvar = batch["mu"], batch["logvar"]
         std = torch.exp(logvar / 2)
@@ -28,6 +29,7 @@ class CVAE(CAE):
         batch["z"] = self.reparameterize(batch)
 
         # decode
+
         batch.update(self.decoder(batch))
 
         # if we want to output xyz
@@ -41,3 +43,17 @@ class CVAE(CAE):
         distrib_param = self.encoder(batch)
         batch.update(distrib_param)
         return self.reparameterize(batch, seed=seed)
+
+    def compute_loss(self, batch):
+        """Additionally compute latent decoder loss."""
+        super().compute_loss(batch)
+        __import__('pdb').set_trace()
+
+        # Add loss on latent
+        x = batch["x"]
+        self.decoder.auto.(x)
+
+
+
+        batch["latent_dec"]
+        return mixed_loss, losses

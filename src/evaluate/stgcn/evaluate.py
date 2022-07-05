@@ -61,15 +61,16 @@ class Evaluation:
         for sets in ["test"]:
             computedfeats = {}
             metrics = {}
-            for key, loaderSets in loaders.items():
-                loader = loaderSets[sets]
+            for key in ["gen", "gt"]:
+                loader = loaders[key][sets]
 
                 metric = "accuracy"
                 print_logs(metric, key)
                 mkey = f"{metric}_{key}"
-                metrics[mkey], _ = calculate_accuracy(
+                metrics[mkey], confusion = calculate_accuracy(
                     model, loader, self.num_classes, self.model, self.device
                 )
+                metrics[f"confusion_{key}"] = confusion
                 # features for diversity
                 print_logs("features", key)
                 feats, labels = self.compute_features(model, loader)
@@ -87,13 +88,9 @@ class Evaluation:
             # taking the stats of the ground truth and remove it from the computed feats
             gtstats = computedfeats["gt"]["stats"]
             # computing fid
-            for key, loader in computedfeats.items():
-                metric = "fid"
-                mkey = f"{metric}_{key}"
-
-                stats = computedfeats[key]["stats"]
-                metrics[mkey] = float(calculate_fid(gtstats, stats))
-
+            loader = computedfeats["gen"]
+            stats = loader["stats"]
+            metrics["fid_gen"] = float(calculate_fid(gtstats, stats))
             metrics_all[sets] = metrics
 
         metrics = {}

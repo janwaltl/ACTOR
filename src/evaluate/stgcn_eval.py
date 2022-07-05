@@ -77,6 +77,160 @@ class NewDataloader:
         return iter(self.batches)
 
 
+FRAMES = 60
+
+
+def _gen_data(kind: str, num_batches: int, parameters, model, folder):
+    data = []
+    pose_rep = parameters["pose_rep"]
+    translation = parameters["translation"]
+    batch_size = parameters["batch_size"]
+    device = parameters["device"]
+    with torch.no_grad():
+        for c in tqdm(
+            range(parameters["num_classes"]), desc=f"[{kind}]Generating class"
+        ):
+            batches = []
+            for _ in tqdm(
+                range(num_batches), desc=f"[{kind}]Generating batch", leave=False
+            ):
+                classes = torch.full((batch_size,), c).to(device)
+                gendurations = torch.full((batch_size,), FRAMES).to(device)
+                batch = model.generate(classes, gendurations)
+
+                if translation:
+                    x = batch["output"][:, :-1]
+                else:
+                    x = batch["output"]
+
+                x = x.permute(0, 3, 1, 2)
+                batches.append(x)
+            batches = torch.cat(batches)
+            data.append(batches)
+        data = torch.stack(data)
+        dest = os.path.join(folder, f"{kind}_gen_dataset.npy")
+        print(f"Saving {data.shape} to {dest}")
+        with open(dest, "wb") as f:
+            torch.save(data, f)
+        return data
+
+
+def generate(parameters, folder, checkpointname, epoch, niter):
+    torch.multiprocessing.set_sharing_strategy("file_system")
+
+    pose_rep = parameters["pose_rep"]
+    translation = parameters["translation"]
+    batch_size = parameters["batch_size"]
+
+    device = parameters["device"]
+
+    parameters["num_classes"] = 40
+    parameters["nfeats"] = 6
+    parameters["njoints"] = 25
+
+    model = get_gen_model(parameters)
+    print("Restore weights..")
+    checkpointpath = os.path.join(folder, checkpointname)
+    state_dict = torch.load(checkpointpath, map_location=device)
+    model.load_state_dict(state_dict)
+    model.eval()
+
+    model.outputxyz = False
+
+    fixseed(1)
+    _gen_data("train", niter, parameters, model, folder=folder)
+    fixseed(2)
+    _gen_data("test", max(1, niter // 10), parameters, model, folder=folder)
+
+
+def reconstruct(parameters, folder, checkpointname, epoch, niter):
+    torch.multiprocessing.set_sharing_strategy("file_system")
+
+    device = parameters["device"]
+    translation = parameters["translation"]
+    bs = parameters["batch_size"]
+
+    parameters["num_classes"] = 40
+    parameters["nfeats"] = 6
+    parameters["njoints"] = 25
+
+    model = get_gen_model(parameters)
+    print("Restore weights..")
+    checkpointpath = os.path.join(folder, checkpointname)
+    state_dict = torch.load(checkpointpath, map_location=device)
+    model.load_state_dict(state_dict)
+    model.eval()
+
+    model.outputxyz = False
+
+    datasets = {key: get_datasets(parameters)[key] for key in ["train", "test"]}
+    for data in datasets.values():
+        data.reset_shuffle()
+        data.shuffle()
+
+    for kind in ["train", "test"]:
+        print("Processing DATA")
+        orig_motions = list(datasets[kind])
+        print("PROCESSED DATA")
+        outs = []
+        outs_lab = []
+        print("TR", translation)
+        fixseed(12)
+        for i in tqdm(range(20)):
+            motions, labels = process_batch(
+                model, orig_motions, bs, orig_motions, device, translation, i * 30, 60
+            )
+            outs.append(motions)
+            outs_lab.append(labels)
+        dest = os.path.join(folder, f"{kind}_recon_motions.npy")
+        print(f"Saving to {dest}")
+        with open(dest, "wb") as f:
+            torch.save(outs, f)
+        dest = os.path.join(folder, f"{kind}_recon_labels.npy")
+        print(f"Saving to {dest}")
+        with open(dest, "wb") as f:
+            torch.save(outs_lab, f)
+
+
+def process_batch(
+    model, motions, bs, dataset, device, translation, start: int, frames: int
+):
+    motions = filter(lambda x: (x[0].shape[-1] >= frames + start), dataset)
+    batches = batchify(motions, bs)
+    smooth_b = []
+    smooth_b_c = []
+    with torch.no_grad():
+        for batch in batches:
+            batch = [(b[0][:, :, start : (start + frames)], b[1]) for b in batch]
+            batch = collate(batch)
+            classes = batch["y"]
+            batch = {key: val.to(device) for key, val in batch.items()}
+            batch = model(batch)
+
+            if translation:
+                x = batch["output"][:, :-1]
+            else:
+                x = batch["output"]
+
+            x = x.permute(0, 3, 1, 2).to("cpu")
+            smooth_b.append(x)
+            smooth_b_c.append(classes)
+    return smooth_b, smooth_b_c
+
+
+def batchify(iterable, n):
+    iterable = iter(iterable)
+    while True:
+        chunk = []
+        for _ in range(n):
+            try:
+                chunk.append(next(iterable))
+            except StopIteration:
+                yield chunk
+                return
+        yield chunk
+
+
 def evaluate(parameters, folder, checkpointname, epoch, niter):
     torch.multiprocessing.set_sharing_strategy("file_system")
 
@@ -95,21 +249,18 @@ def evaluate(parameters, folder, checkpointname, epoch, niter):
     parameters["njoints"] = 25
 
     model = get_gen_model(parameters)
-
     print("Restore weights..")
     checkpointpath = os.path.join(folder, checkpointname)
     state_dict = torch.load(checkpointpath, map_location=device)
     model.load_state_dict(state_dict)
     model.eval()
 
-    print("Restored")
     model.outputxyz = False
 
     recogparameters = parameters.copy()
     recogparameters["pose_rep"] = "rot6d"
     recogparameters["nfeats"] = 6
 
-    print("Action")
     # Action2motionEvaluation
     stgcnevaluation = STGCNEvaluation(dataname, recogparameters, device)
 
@@ -117,15 +268,14 @@ def evaluate(parameters, folder, checkpointname, epoch, niter):
     # joints_metrics = {}
     # pose_metrics = {}
 
-    print("LOAD")
     compute_gt_gt = False
     if compute_gt_gt:
         datasetGT = {
             key: [get_datasets(parameters)[key], get_datasets(parameters)[key]]
-            for key in ["test"]
+            for key in ["train", "test"]
         }
     else:
-        datasetGT = {key: [get_datasets(parameters)[key]] for key in ["test"]}
+        datasetGT = {key: [get_datasets(parameters)[key]] for key in ["train", "test"]}
 
     print("Dataset loaded")
 
@@ -133,7 +283,7 @@ def evaluate(parameters, folder, checkpointname, epoch, niter):
 
     for seed in allseeds:
         fixseed(seed)
-        for key in ["test"]:
+        for key in ["train", "test"]:
             for data in datasetGT[key]:
                 data.reset_shuffle()
                 data.shuffle()
@@ -149,7 +299,7 @@ def evaluate(parameters, folder, checkpointname, epoch, niter):
                 )
                 for data in datasetGT[key]
             ]
-            for key in ["test"]
+            for key in ["train", "test"]
         }
 
         if doing_recons:
@@ -157,26 +307,25 @@ def evaluate(parameters, folder, checkpointname, epoch, niter):
                 key: NewDataloader(
                     "rc", model, parameters, dataiterator[key][0], device
                 )
-                for key in ["test"]
+                for key in ["train", "test"]
             }
 
         gtLoaders = {
             key: NewDataloader("gt", model, parameters, dataiterator[key][0], device)
-            for key in ["test"]
+            for key in ["train", "test"]
         }
 
-        compute_gt_gt = False
         if compute_gt_gt:
             gtLoaders2 = {
                 key: NewDataloader(
                     "gt", model, parameters, dataiterator[key][1], device
                 )
-                for key in ["test"]
+                for key in ["train", "test"]
             }
 
         genLoaders = {
             key: NewDataloader("gen", model, parameters, dataiterator[key][0], device)
-            for key in ["test"]
+            for key in ["train", "test"]
         }
 
         loaders = {"gen": genLoaders, "gt": gtLoaders}
