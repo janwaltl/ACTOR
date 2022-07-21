@@ -25,6 +25,8 @@ class HumanAct12Poses(Dataset):
         self.num_classes = total_num_actions
 
         self._train = list(range(len(self._pose)))
+        # Test is same as train
+        self._test = list(range(len(self._pose)))
 
         keep_actions = np.arange(0, total_num_actions)
 

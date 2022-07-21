@@ -16,6 +16,7 @@ from src.utils.tensors import collate
 
 import sys
 
+from models.motion_predictor_sos import MotionPredictorSOS
 from .tools import save_metrics, format_metrics
 from src.models.get_model import get_model as get_gen_model
 from src.datasets.get_dataset import get_datasets
@@ -55,6 +56,7 @@ class NewDataloader:
         temperature = parameters["eval_temperature"]
         self.batches = []
         starting_pose = torch.Tensor(torch.load("starting_pose.pkl"))
+        base_motion = None
 
         with torch.no_grad():
             for databatch in tqdm(
@@ -62,18 +64,27 @@ class NewDataloader:
             ):
                 if mode == "gen":
                     classes = databatch["y"]
-                    b = classes.shape[0]
 
                     base = databatch["x"]
-                    base = base[:, :24, :, :1].to(device)
-                    base_motion = rearrange(base, "b j s l -> b l (j s)")
-                    # base_motion = repeat(starting_pose, "j d->b 1 (j d)", b=b).to( device)
+                    if isinstance(my_model, MotionPredictorSOS):
+                        base_motion = None
+                    else:
+                        base = base[:, :24, :, :1].to(device)
+                        base_motion = rearrange(base, "b j s l -> b l (j s)")
+                        # b = classes.shape[0]
+                        # base_motion = repeat(starting_pose, "j d->b 1 (j d)", b=b).to( device)
 
                     batch = {key: val.to(device) for key, val in databatch.items()}
                     feats = "output"
                     classes = classes.to("cuda")
                     gen_motion = my_model.generate_motion(
-                        classes, 60, base_motion, k=top_k, temp=temperature, top_p=top_p
+                        classes,
+                        60,
+                        base_motion=base_motion,
+                        k=top_k,
+                        temp=temperature,
+                        top_p=top_p,
+                        use_cache=True,
                     )
 
                     gen_motion = gen_motion[:, 0:60]
@@ -83,6 +94,8 @@ class NewDataloader:
                     translation = False
                 elif mode == "gt":
                     batch = {key: val.to(device) for key, val in databatch.items()}
+                    x = batch["x"]
+                    batch.update({"x": x[:, :, :, :60]})
                     feats = "x"
                 else:
                     assert False
@@ -233,82 +246,3 @@ def evaluate(
     if do_save_metrics:
         save_metrics(evalpath, metrics)
     return {"acc": acc, "fid": fid, "mmod": mmod, "div": div}
-
-
-import pandas as pd
-
-if __name__ == "__main__":
-    if True:  # Best
-        top_k = 7
-        temperature = 2.0
-        evaluator = EvalMetrics(top_k, temperature)
-        models = [
-            #  "results/march_tok_motion_auto/conv_pass_large_s4_sampled-v8.torch",
-            #  "results/march_tok_motion_auto/conv_pass_large_s4-v8.torch",
-            #  "results/march_tok_motion_auto/conv_pass_medium_s4_sampled-v8.torch",
-            #  "results/march_tok_motion_auto/conv_pass_medium_s4-v8.torch",
-            #  "results/march_tok_motion_auto/attn_pass_large_s4-v8.torch",
-            #  "results/march_tok_motion_auto/attn_pass_medium_s4-v8.torch",
-            #  "results/march_tok_motion_auto/attn_pass_large_s4_sampled-v8.torch",
-            #  "results/march_tok_motion_auto/attn_pass_medium_s4_sampled-v8.torch",
-            # Best
-            # "results/march_tok_motion_auto/attn_pass_large_s4_standingW-v8-epoch200.torch",
-            # "results/april_tok_motion_auto/attn_pass_large_s4-v1.torch",
-            # "results/april_tok_motion_auto/attn_pass_large_s8-v1-epoch200.torch",
-            # "results/april_tok_motion_auto/attn_pass_large_s4_finetune_gold25-v2.torch",
-            # "results/april_tok_motion_auto/attn_pass_large_s4_finetune_gold_drop-v2.torch",
-            # AG
-            # "results/april_tok_motion_auto_ag/attn_pass_large_s4_uestc-v2_drop-epoch25.torch",
-            # "results/april_tok_motion_auto_ag/attn_pass_large_s8_uestc-v2_drop-epoch30.torch",
-            # MAY
-            # "results/may_tok_motion_auto/large_s4_auto_uestc-v1.torch",
-            # "results/may_tok_motion_auto/large_s4_recauto_uestc-v1-epoch225.torch",
-            # "results/may_tok_motion_auto/large_s4_recauto_rec_uestc-v1-epoch25.torch",
-            # "results/may_tok_motion_auto/large_s8_auto_uestc-v1-epoch225.torch",
-            # "results/may_tok_motion_auto/large_s8_recauto_uestc-v1-epoch125.torch",
-            # "results/may_tok_motion_auto/large_s8_recauto_rec_uestc-v1-epoch25.torch",
-            # "results/may_tok_motion_auto/large_s4_recauto_rec_uestc-v2.torch",
-            # "results/may_tok_motion_auto/large_s4_auto_uestc-v2.torch",
-            # "results/may_tok_motion_auto/large_s8_auto_uestc-v2.torch",
-            "results/may_tok_motion_auto/large_s4_auto_uestc-v3.torch",
-        ]
-        for model in models:
-            metrics = evaluate(
-                None, None, None, None, niter=10, evaluator=evaluator, model=model
-            )
-        exit(0)
-    print(80 * "=")
-    print("SAMPLING SURVEY")
-    print(80 * "=")
-
-    do_save_metrics = False
-    data = []
-    values = [
-        (k, temp)
-        for k in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30, 40, 50, 100, 200, 512]
-        # for temp in [0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0]
-        # for temp in [0.1, 0.2, 0.5, 1.0]
-        # for temp in [2.0, 5.0, 10.0, 20.0]
-        # for temp in [0.1, 0.2]
-        # for temp in [0.5, 1.0]
-        # for temp in [2.0, 5.0]
-        for temp in [10.0, 20.0]
-    ]
-    for k, temp in tqdm(values):
-        top_k = k
-        temperature = temp
-        metrics = evaluate(
-            None,
-            None,
-            None,
-            None,
-            niter=3,
-            evaluator=evaluator,
-            model="results/may_tok_motion_auto/large_s8_auto_uestc-v3.torch",
-        )
-        means = {k + "_mean": v[1] for k, v in metrics.items()}
-        stds = {k + "_std": v[2] for k, v in metrics.items()}
-        data.append({"k": top_k, "temp": temperature, **means, **stds})
-
-    df = pd.DataFrame(data)
-    df.to_csv("eval_results/may_s8_sampling_survey4.csv")
